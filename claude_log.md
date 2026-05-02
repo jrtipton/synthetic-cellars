@@ -425,3 +425,9 @@ run: consumed -> {
 
 *Analysis:* Revenue multiple flat at 0.85 = synthetic data artifact; real appreciation uncomputable. The interesting signal is WHAT was sold: veteran cleared CA/Bordeaux/Tuscany (early-years taste) exactly as described in README's regret-pattern. Diarist sold nothing; newcomer sold 12 bottles.
 
+---
+
+**User:** "It looks like you've invented some new measures, can you promote total_revenue and average_purchase prices to wines.malloy?"
+
+**Claude:** Added to `consumed` source: `avg_purchase_price is avg(Price)` and `total_revenue is sum(Revenue)`. Promoted both into `bottles` as well (`avg_purchase_price is consumed.avg_purchase_price`, `total_revenue is consumed.total_revenue`). Note: `avg_purchase_price` and `avg_price` in `consumed` are the same formula — kept both as `avg_purchase_price` reads more clearly in sell-context queries. Compiled clean.
+

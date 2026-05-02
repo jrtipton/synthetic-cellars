@@ -61,7 +61,9 @@ source: consumed is duckdb.sql("""
 """) extend {
   measure: bottle_count is count()
   measure: avg_price is avg(Price)
+  measure: avg_purchase_price is avg(Price)
   measure: total_value is sum(Value)
+  measure: total_revenue is sum(Revenue)
   dimension: is_sold is ShortType = 'Sold'
   dimension: is_nv is Vintage = 1001
   dimension: pk is concat(persona, '-', iWine::string)
@@ -93,4 +95,6 @@ source: bottles is purchase extend {
   measure: in_cellar is inventory.bottle_count
   measure: consumed_count is consumed.bottle_count
   measure: avg_consumed_price is consumed.avg_price
+  measure: avg_purchase_price is consumed.avg_purchase_price
+  measure: total_revenue is consumed.total_revenue
 }
