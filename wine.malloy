@@ -12,6 +12,48 @@ source: inventory is duckdb.sql("""
   measure: total_value is sum(Price)
   dimension: is_nv is Vintage = 1001
   dimension: pk is concat(persona, '-', iWine::string)
+
+  // Burgundy classification — opinionated:
+  //   - Beaujolais and Chablis count as Burgundy.
+  //   - Beaujolais Cru, Beaujolais Villages, Beaujolais are distinct tiers.
+  //   - Petit Chablis is its own tier (not folded into Régional).
+  //   - Outside Region='Burgundy' the dimension is null.
+  dimension: classification is
+    pick null                  when Region != 'Burgundy'
+    pick 'Grand Cru'           when Appellation ~ r'Grand Cru$'
+    pick '1er Cru'             when Appellation ~ r'1er Cru$'
+    pick 'Beaujolais Cru'      when SubRegion = 'Beaujolais'
+                                and Appellation != 'Beaujolais'
+                                and Appellation != 'Beaujolais-Villages'
+    pick 'Beaujolais Villages' when Appellation = 'Beaujolais-Villages'
+    pick 'Beaujolais'          when Appellation = 'Beaujolais'
+    pick 'Petit Chablis'       when Appellation = 'Petit Chablis'
+    pick 'Régional'            when Appellation ~ r'^Bourgogne'
+    else 'Village'
+
+  // Quality-tier ordering for displays. GC at the top; Régional at the bottom.
+  dimension: classification_rank is
+    pick 1 when classification = 'Grand Cru'
+    pick 2 when classification = '1er Cru'
+    pick 3 when classification = 'Village'
+    pick 4 when classification = 'Beaujolais Cru'
+    pick 5 when classification = 'Beaujolais Villages'
+    pick 6 when classification = 'Beaujolais'
+    pick 7 when classification = 'Petit Chablis'
+    pick 8 when classification = 'Régional'
+    else null
+
+  view: by_classification is {
+    where: Region = 'Burgundy'
+    group_by: classification, classification_rank
+    aggregate: bottle_count, total_value
+    nest: by_appellation is {
+      group_by: Appellation
+      aggregate: bottle_count, total_value
+      order_by: bottle_count desc
+    }
+    order_by: classification_rank asc
+  }
 }
 
 source: purchase is duckdb.sql("""
@@ -32,6 +74,30 @@ source: purchase is duckdb.sql("""
   dimension: purchase_year is year(PurchaseDate)
   dimension: is_nv is Vintage = 1001
   dimension: pk is concat(persona, '-', iWine::string)
+
+  dimension: classification is
+    pick null                  when Region != 'Burgundy'
+    pick 'Grand Cru'           when Appellation ~ r'Grand Cru$'
+    pick '1er Cru'             when Appellation ~ r'1er Cru$'
+    pick 'Beaujolais Cru'      when SubRegion = 'Beaujolais'
+                                and Appellation != 'Beaujolais'
+                                and Appellation != 'Beaujolais-Villages'
+    pick 'Beaujolais Villages' when Appellation = 'Beaujolais-Villages'
+    pick 'Beaujolais'          when Appellation = 'Beaujolais'
+    pick 'Petit Chablis'       when Appellation = 'Petit Chablis'
+    pick 'Régional'            when Appellation ~ r'^Bourgogne'
+    else 'Village'
+
+  dimension: classification_rank is
+    pick 1 when classification = 'Grand Cru'
+    pick 2 when classification = '1er Cru'
+    pick 3 when classification = 'Village'
+    pick 4 when classification = 'Beaujolais Cru'
+    pick 5 when classification = 'Beaujolais Villages'
+    pick 6 when classification = 'Beaujolais'
+    pick 7 when classification = 'Petit Chablis'
+    pick 8 when classification = 'Régional'
+    else null
 
   view: by_store is {
     group_by: StoreName
@@ -68,6 +134,29 @@ source: consumed is duckdb.sql("""
   dimension: is_nv is Vintage = 1001
   dimension: pk is concat(persona, '-', iWine::string)
 
+  dimension: classification is
+    pick null                  when Region != 'Burgundy'
+    pick 'Grand Cru'           when Appellation ~ r'Grand Cru$'
+    pick '1er Cru'             when Appellation ~ r'1er Cru$'
+    pick 'Beaujolais Cru'      when SubRegion = 'Beaujolais'
+                                and Appellation != 'Beaujolais'
+                                and Appellation != 'Beaujolais-Villages'
+    pick 'Beaujolais Villages' when Appellation = 'Beaujolais-Villages'
+    pick 'Beaujolais'          when Appellation = 'Beaujolais'
+    pick 'Petit Chablis'       when Appellation = 'Petit Chablis'
+    pick 'Régional'            when Appellation ~ r'^Bourgogne'
+    else 'Village'
+
+  dimension: classification_rank is
+    pick 1 when classification = 'Grand Cru'
+    pick 2 when classification = '1er Cru'
+    pick 3 when classification = 'Village'
+    pick 4 when classification = 'Beaujolais Cru'
+    pick 5 when classification = 'Beaujolais Villages'
+    pick 6 when classification = 'Beaujolais'
+    pick 7 when classification = 'Petit Chablis'
+    pick 8 when classification = 'Régional'
+    else null
 }
 
 source: notes is duckdb.sql("""
@@ -83,9 +172,33 @@ source: notes is duckdb.sql("""
   measure: bottle_count is count()
   measure: avg_rating is avg(Rating)
   measure: event_count is count(iEvent)
-  dimension: has_event is iEvent != null
+  dimension: has_event is iEvent is not null
   dimension: tasting_year is year(TastingDate)
   dimension: pk is concat(persona, '-', iWine::string)
+
+  dimension: classification is
+    pick null                  when Region != 'Burgundy'
+    pick 'Grand Cru'           when Appellation ~ r'Grand Cru$'
+    pick '1er Cru'             when Appellation ~ r'1er Cru$'
+    pick 'Beaujolais Cru'      when SubRegion = 'Beaujolais'
+                                and Appellation != 'Beaujolais'
+                                and Appellation != 'Beaujolais-Villages'
+    pick 'Beaujolais Villages' when Appellation = 'Beaujolais-Villages'
+    pick 'Beaujolais'          when Appellation = 'Beaujolais'
+    pick 'Petit Chablis'       when Appellation = 'Petit Chablis'
+    pick 'Régional'            when Appellation ~ r'^Bourgogne'
+    else 'Village'
+
+  dimension: classification_rank is
+    pick 1 when classification = 'Grand Cru'
+    pick 2 when classification = '1er Cru'
+    pick 3 when classification = 'Village'
+    pick 4 when classification = 'Beaujolais Cru'
+    pick 5 when classification = 'Beaujolais Villages'
+    pick 6 when classification = 'Beaujolais'
+    pick 7 when classification = 'Petit Chablis'
+    pick 8 when classification = 'Régional'
+    else null
 }
 
 source: bottles is purchase extend {
@@ -97,4 +210,34 @@ source: bottles is purchase extend {
   measure: avg_consumed_price is consumed.avg_price
   measure: avg_purchase_price is consumed.avg_purchase_price
   measure: total_revenue is consumed.total_revenue
+}
+
+// --------------------------------------------------------------------
+// Burgundy classification demos
+// --------------------------------------------------------------------
+
+// What's in the cellar by classification (all personas combined).
+run: inventory -> by_classification
+
+// One persona's Burgundy cellar, drilled in.
+run: inventory -> by_classification + {
+  where: persona = 'a_auction_veteran'
+}
+
+// Spend by classification: how much money lives in each tier?
+run: purchase -> {
+  where: Region = 'Burgundy'
+  group_by: classification, classification_rank
+  aggregate: bottle_count, total_spend, avg_bottle_price
+  order_by: classification_rank asc
+}
+
+// Rate-by-tier: do my notes actually rate Grands Crus higher than Villages?
+run: notes -> {
+  where: Region = 'Burgundy', Rating > 0
+  group_by: classification, classification_rank
+  aggregate:
+    rating_n is count(),
+    avg_rating is avg(Rating)
+  order_by: classification_rank asc
 }
