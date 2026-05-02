@@ -135,3 +135,183 @@ run: consumed -> {
 
 **Claude:** Updated the previous log entry to include full Malloy queries, results tables, and analysis. Updated memory to reflect the new logging standard.
 
+---
+
+**User:** "can you make a pull request for these changes?"
+
+**Claude:** Created branch `malloy-semantic-model`, committed `wine.malloy`, `malloy-config.json`, and `claude_log.md` (excluded `.mcp.json` — hardcoded local binary path). Pushed and opened PR: https://github.com/jrtipton/synthetic-cellars/pull/1
+
+---
+
+**User:** "can you add .mcp.json to the pull request? I expect it to be edited."
+
+**Claude:** Edited `.mcp.json` to replace the hardcoded `/home/lloydtabb/bin/malloy-cli` path with just `malloy-cli` (portable, assumes it's on PATH). Committed and pushed to the existing PR branch.
+
+---
+
+**User:** "do these tables have a shared key so they can be joined?"
+
+**Claude:** Ran two queries to investigate.
+
+*Query 1 (verify iWine exists and is meaningful):*
+```malloy
+import "wine.malloy"
+
+run: purchase -> {
+  group_by: persona, iWine
+  aggregate: lot_count
+  limit: 5
+}
+```
+*Results:* Confirmed iWine present across purchase rows.
+
+*Query 2 (check if iWine is persona-scoped):*
+```malloy
+import "wine.malloy"
+
+run: purchase -> {
+  group_by: iWine
+  aggregate: persona_count is count(persona)
+  having: persona_count > 1
+  limit: 5
+}
+```
+*(First attempt used `where: persona_count > 1` which failed — `where` can't reference aggregates, corrected to `having`.)*
+
+*Results:* Many iWine values appear in all 3 personas — iWine is drawn from a shared wine catalog, not persona-scoped.
+
+*Analysis:* The join key is `persona` + `iWine` compound. All four sources share this key; all relationships are one-to-many on iWine (many purchases, consumed bottles, or notes per wine). Malloy joins would use `join_many` with both conditions.
+
+---
+
+**User:** "lets add a dimension to all tables called 'pk' that is a concatination of persona and iWine"
+
+**Claude:** Added `pk` to all four sources. First attempt used `||` (SQL concatenation operator):
+```malloy
+dimension: pk is persona || '-' || iWine::string
+```
+*Error:* `||` is not valid Malloy syntax — compiler rejected it.
+
+Corrected to `concat()`:
+```malloy
+dimension: pk is concat(persona, '-', iWine::string)
+```
+Compiled clean on all four sources.
+
+---
+
+**User:** "does inventory contain all bottle purchased, consumed and notes?"
+
+**Claude:** Ran two queries to check relationships.
+
+*Query 1 — purchase totals:*
+```malloy
+import "wine.malloy"
+
+run: purchase -> {
+  group_by: persona
+  aggregate:
+    purchased is bottle_count
+    remaining is sum(Remaining)
+}
+```
+*Results:*
+| persona | purchased | remaining |
+|---|---|---|
+| a_auction_veteran | 8,800 | 5,321 |
+| b_allocation_diarist | 4,347 | 2,500 |
+| c_champagne_newcomer | 1,728 | 1,000 |
+
+*Query 2 — inventory row counts:*
+```malloy
+import "wine.malloy"
+
+run: inventory -> {
+  group_by: persona
+  aggregate: in_cellar is bottle_count
+}
+```
+*Results:*
+| persona | in_cellar |
+|---|---|
+| a_auction_veteran | 5,321 |
+| b_allocation_diarist | 2,500 |
+| c_champagne_newcomer | 1,000 |
+
+*Analysis:* `inventory` exactly equals `purchase.Remaining` — it's a current cellar snapshot, not a history. The math is: purchased = inventory + consumed (8800 = 5321 + 3479 ✓). `notes` is independent of bottle lifecycle — you can have notes on wines you no longer own.
+
+---
+
+**User:** "lets make a new source bottles that starts with purchase and joins in inventory and consumed, we'll probably want to use that for most of our queries."
+
+**Claude:** Added `bottles` source to `wine.malloy`. First confirmed the join worked inline:
+```malloy
+source: bottles is purchase extend {
+  join_many: inventory on pk = inventory.pk
+  join_many: consumed on pk = consumed.pk
+}
+
+run: bottles -> {
+  group_by: persona
+  aggregate:
+    purchased is bottle_count
+    in_cellar is inventory.bottle_count
+    consumed_count is consumed.bottle_count
+}
+```
+*Results:*
+| persona | purchased | in_cellar | consumed_count |
+|---|---|---|---|
+| a_auction_veteran | 8,800 | 5,321 | 3,479 |
+| b_allocation_diarist | 4,347 | 2,500 | 1,847 |
+| c_champagne_newcomer | 1,728 | 1,000 | 728 |
+
+Numbers balance perfectly (purchased = in_cellar + consumed). Added the source to `wine.malloy` with promoted measures `in_cellar`, `consumed_count`, and `avg_consumed_price`. Also caught and removed an accidental duplicate measure (`avg_rating is consumed.avg_price`) during authoring. Compiled clean.
+
+---
+
+**User:** "what percent of bottles from the santa cruz mountains has been consumed by persona?"
+
+**Claude:** First attempt used `|` for OR filter — hit a DuckDB type coercion error:
+```malloy
+run: bottles -> {
+  where: SubRegion = 'Santa Cruz Mountains' | Appellation = 'Santa Cruz Mountains'
+  ...
+}
+```
+*Error:* `Could not convert string to BOOL` — `|` not valid for logical OR in where clause.
+
+Ran a discovery query using regex to check which field contained the value:
+```malloy
+run: bottles -> {
+  group_by: SubRegion, Appellation
+  aggregate: bottle_count
+  where: SubRegion ~ r'Santa Cruz' or Appellation ~ r'Santa Cruz'
+}
+```
+*Result:* Both fields = `'Santa Cruz Mountains'`, so filtered on `SubRegion` only.
+
+Final query:
+```malloy
+import "wine.malloy"
+
+run: bottles -> {
+  where: SubRegion = 'Santa Cruz Mountains'
+  group_by: persona
+  aggregate:
+    bottle_count
+    in_cellar
+    consumed_count
+    pct_consumed is consumed_count / bottle_count * 100
+}
+```
+
+*Results:*
+| persona | bottle_count | in_cellar | consumed_count | pct_consumed |
+|---|---|---|---|---|
+| a_auction_veteran | 303 | 135 | 168 | 55% |
+| b_allocation_diarist | 156 | 100 | 56 | 36% |
+| c_champagne_newcomer | 18 | 10 | 8 | 44% |
+
+*Analysis:* Veteran has drunk through 55% of Santa Cruz Mountains bottles. Diarist (heavy West Coast Pinot/Chard collector) is hoarding — only 36% consumed despite being a significant buyer in the region.
+

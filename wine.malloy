@@ -11,6 +11,7 @@ source: inventory is duckdb.sql("""
   measure: bottle_count is count()
   measure: total_value is sum(Price)
   dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
 }
 
 source: purchase is duckdb.sql("""
@@ -30,6 +31,22 @@ source: purchase is duckdb.sql("""
   measure: shipment_count is count(OrderNumber)
   dimension: purchase_year is year(PurchaseDate)
   dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
+
+  view: by_store is {
+    group_by: StoreName
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
+
+  view: by_producer is {
+    group_by: Producer
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
+
+  view: by_subregion is {
+    group_by: SubRegion
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
 }
 
 source: consumed is duckdb.sql("""
@@ -47,6 +64,8 @@ source: consumed is duckdb.sql("""
   measure: total_value is sum(Value)
   dimension: is_sold is ShortType = 'Sold'
   dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
+
 }
 
 source: notes is duckdb.sql("""
@@ -64,4 +83,14 @@ source: notes is duckdb.sql("""
   measure: event_count is count(iEvent)
   dimension: has_event is iEvent is not null
   dimension: tasting_year is year(TastingDate)
+  dimension: pk is concat(persona, '-', iWine::string)
+}
+
+source: bottles is purchase extend {
+  join_many: inventory on pk = inventory.pk
+  join_many: consumed on pk = consumed.pk
+
+  measure: in_cellar is inventory.bottle_count
+  measure: consumed_count is consumed.bottle_count
+  measure: avg_consumed_price is consumed.avg_price
 }
