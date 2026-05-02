@@ -1,0 +1,100 @@
+source: inventory is duckdb.sql("""
+  SELECT 'a_auction_veteran' as persona, *
+  FROM read_csv('a_auction_veteran/inventory.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'b_allocation_diarist' as persona, *
+  FROM read_csv('b_allocation_diarist/inventory.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'c_champagne_newcomer' as persona, *
+  FROM read_csv('c_champagne_newcomer/inventory.csv', header=true, auto_detect=true)
+""") extend {
+  measure: bottle_count is count()
+  measure: total_value is sum(Price)
+  dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
+}
+
+source: purchase is duckdb.sql("""
+  SELECT 'a_auction_veteran' as persona, *
+  FROM read_csv('a_auction_veteran/purchase.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'b_allocation_diarist' as persona, *
+  FROM read_csv('b_allocation_diarist/purchase.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'c_champagne_newcomer' as persona, *
+  FROM read_csv('c_champagne_newcomer/purchase.csv', header=true, auto_detect=true)
+""") extend {
+  measure: bottle_count is sum(Quantity)
+  measure: lot_count is count()
+  measure: total_spend is sum(Price * Quantity)
+  measure: avg_bottle_price is avg(Price)
+  measure: shipment_count is count(OrderNumber)
+  dimension: purchase_year is year(PurchaseDate)
+  dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
+
+  view: by_store is {
+    group_by: StoreName
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
+
+  view: by_producer is {
+    group_by: Producer
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
+
+  view: by_subregion is {
+    group_by: SubRegion
+    aggregate: bottle_count, total_spend, avg_bottle_price
+  }
+}
+
+source: consumed is duckdb.sql("""
+  SELECT 'a_auction_veteran' as persona, *
+  FROM read_csv('a_auction_veteran/consumed.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'b_allocation_diarist' as persona, *
+  FROM read_csv('b_allocation_diarist/consumed.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'c_champagne_newcomer' as persona, *
+  FROM read_csv('c_champagne_newcomer/consumed.csv', header=true, auto_detect=true)
+""") extend {
+  measure: bottle_count is count()
+  measure: avg_price is avg(Price)
+  measure: avg_purchase_price is avg(Price)
+  measure: total_value is sum(Value)
+  measure: total_revenue is sum(Revenue)
+  dimension: is_sold is ShortType = 'Sold'
+  dimension: is_nv is Vintage = 1001
+  dimension: pk is concat(persona, '-', iWine::string)
+
+}
+
+source: notes is duckdb.sql("""
+  SELECT 'a_auction_veteran' as persona, *
+  FROM read_csv('a_auction_veteran/notes.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'b_allocation_diarist' as persona, *
+  FROM read_csv('b_allocation_diarist/notes.csv', header=true, auto_detect=true)
+  UNION ALL
+  SELECT 'c_champagne_newcomer' as persona, *
+  FROM read_csv('c_champagne_newcomer/notes.csv', header=true, auto_detect=true)
+""") extend {
+  measure: bottle_count is count()
+  measure: avg_rating is avg(Rating)
+  measure: event_count is count(iEvent)
+  dimension: has_event is iEvent is not null
+  dimension: tasting_year is year(TastingDate)
+  dimension: pk is concat(persona, '-', iWine::string)
+}
+
+source: bottles is purchase extend {
+  join_one: inventory on pk = inventory.pk
+  join_one: consumed on pk = consumed.pk
+
+  measure: in_cellar is inventory.bottle_count
+  measure: consumed_count is consumed.bottle_count
+  measure: avg_consumed_price is consumed.avg_price
+  measure: avg_purchase_price is consumed.avg_purchase_price
+  measure: total_revenue is consumed.total_revenue
+}
