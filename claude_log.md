@@ -326,3 +326,102 @@ Changes made:
 2. `~/dev/malloy-cli/skills/malloy-language-reference.md`: added a "Choosing `join_one` vs `join_many`" guidance paragraph to the Joins section
 3. Saved a memory note to avoid repeating the mistake
 
+---
+
+**User:** "what is the average time from purchased to consumption by region for each of the personas?"
+
+**Claude:** First attempt worked but had two warnings — `!= null` and missing join locality:
+```malloy
+import "wine.malloy"
+
+run: bottles -> {
+  where: consumed.Consumed != null
+  group_by: persona, Region
+  aggregate:
+    avg_days_to_consume is avg(days(PurchaseDate to consumed.Consumed))
+  order_by: persona, avg_days_to_consume desc
+  limit: 50
+}
+```
+*Warnings:* Use `is not null`; use `consumed.avg(...)` for explicit join locality.
+
+Fixed query:
+```malloy
+import "wine.malloy"
+
+run: bottles -> {
+  where: consumed.Consumed is not null
+  group_by: persona, Region
+  aggregate:
+    avg_months_to_consume is consumed.avg(days(PurchaseDate to consumed.Consumed)) / 30.44
+  order_by: persona, avg_months_to_consume desc
+  limit: 100
+}
+```
+
+*Results (selected highlights):*
+| persona | Region | avg months |
+|---|---|---|
+| a_auction_veteran | Catalunya | 66 |
+| a_auction_veteran | Tuscany | 40 |
+| a_auction_veteran | Bordeaux | 28 |
+| a_auction_veteran | Champagne | 11 |
+| b_allocation_diarist | Alsace | 42 |
+| b_allocation_diarist | Piedmont | 39 |
+| b_allocation_diarist | Champagne | -5 ⚠️ |
+| c_champagne_newcomer | Champagne | 4 |
+
+*Analysis:* Veteran ages Tuscan and Bordeaux bottles longest (2.5–5 years), consistent with low drinking-window adherence described in README. Both veteran and diarist drink Champagne quickly. Negative values are data-quality artifacts — consumed date recorded before purchase date.
+
+---
+
+**User:** "Which wines, historically, have the best resale?"
+
+**Claude:** Three queries run.
+
+*Query 1 — attempted on `consumed` with Producer field:*
+```malloy
+run: consumed -> {
+  where: is_sold
+  group_by: Wine, Producer, Vintage, Region, persona
+  ...
+}
+```
+*Error:* `Producer` not in `consumed` source.
+
+*Query 2 — switched to `bottles` for Producer + revenue multiple:*
+```malloy
+run: bottles -> {
+  where: consumed.is_sold
+  group_by: Wine, Producer, Vintage, Region, persona
+  aggregate:
+    bottles_sold is consumed.bottle_count
+    avg_purchase_price is avg(Price)
+    avg_sale_price is consumed.avg(consumed.Revenue)
+    avg_multiple is consumed.avg(consumed.Revenue / consumed.Price)
+  having: bottles_sold >= 3
+  order_by: avg_multiple desc
+}
+```
+*Result:* All multiples clustered at ~0.85 — flat 15% haircut across all sales. Synthetic data artifact; price appreciation can't be computed from this data.
+
+*Query 3 — shifted focus to what was sold (the regret-pattern story):*
+```malloy
+run: consumed -> {
+  where: is_sold
+  group_by: persona, Region, Varietal
+  aggregate: bottles_sold is bottle_count, avg_purchase_price is avg(Price), total_revenue is sum(Revenue)
+  order_by: persona, bottles_sold desc
+}
+```
+*Results:*
+| persona | Region | Varietal | bottles_sold |
+|---|---|---|---|
+| a_auction_veteran | Bordeaux | Red Bordeaux Blend | 163 |
+| a_auction_veteran | California | Pinot Noir | 133 |
+| a_auction_veteran | California | Red Bordeaux Blend | 46 |
+| c_champagne_newcomer | Burgundy | Pinot Noir | 5 |
+| b_allocation_diarist | — | — | 0 |
+
+*Analysis:* Revenue multiple flat at 0.85 = synthetic data artifact; real appreciation uncomputable. The interesting signal is WHAT was sold: veteran cleared CA/Bordeaux/Tuscany (early-years taste) exactly as described in README's regret-pattern. Diarist sold nothing; newcomer sold 12 bottles.
+
