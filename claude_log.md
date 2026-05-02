@@ -315,3 +315,14 @@ run: bottles -> {
 
 *Analysis:* Veteran has drunk through 55% of Santa Cruz Mountains bottles. Diarist (heavy West Coast Pinot/Chard collector) is hoarding — only 36% consumed despite being a significant buyer in the region.
 
+---
+
+**User:** "I was just reviewing your changes to the wine.malloy for 'bottles' you used a 'join_many' and it should be a 'join_one'. can you look at the Malloy documentation for joins and help me make a change to ~/dev/malloy-cli language reference so you don't make the mistake again?"
+
+**Claude:** Read `src/mcp/help.ts` and `skills/malloy-language-reference.md` in `~/dev/malloy-cli`. Found the Joins section. The distinction: `join_one` = at most one joined row per base row (lookup/many-to-one); `join_many` = potentially many joined rows per base row (fan-out). The `inventory` and `consumed` joins in `bottles` are wine-level lookups — each wine maps to one inventory state and one consumed state — so `join_one` is correct.
+
+Changes made:
+1. `wine.malloy`: changed both joins from `join_many` to `join_one`
+2. `~/dev/malloy-cli/skills/malloy-language-reference.md`: added a "Choosing `join_one` vs `join_many`" guidance paragraph to the Joins section
+3. Saved a memory note to avoid repeating the mistake
+

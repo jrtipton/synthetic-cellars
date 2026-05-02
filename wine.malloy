@@ -87,8 +87,8 @@ source: notes is duckdb.sql("""
 }
 
 source: bottles is purchase extend {
-  join_many: inventory on pk = inventory.pk
-  join_many: consumed on pk = consumed.pk
+  join_one: inventory on pk = inventory.pk
+  join_one: consumed on pk = consumed.pk
 
   measure: in_cellar is inventory.bottle_count
   measure: consumed_count is consumed.bottle_count
