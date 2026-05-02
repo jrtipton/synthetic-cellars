@@ -83,7 +83,7 @@ source: notes is duckdb.sql("""
   measure: bottle_count is count()
   measure: avg_rating is avg(Rating)
   measure: event_count is count(iEvent)
-  dimension: has_event is iEvent is not null
+  dimension: has_event is iEvent != null
   dimension: tasting_year is year(TastingDate)
   dimension: pk is concat(persona, '-', iWine::string)
 }
